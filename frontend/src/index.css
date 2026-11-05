@@ -3,10 +3,14 @@
 @tailwind utilities;
 
 @layer base {
-  body {
+  html, body {
     background-color: #030712;
     color: #f3f4f6;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    overflow-x: hidden;
+    max-width: 100vw;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
   }
 }
 
@@ -38,4 +42,9 @@
   background-color: #10b981;
   border-radius: 9999px;
   box-shadow: 0 0 6px #10b981;
+}
+
+/* Safe area padding for modern iPhones & Android navigation bars */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 1rem);
 }

@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Users,
-  Play,
   RotateCcw,
   ShieldCheck,
   Radio,
   Sparkles,
-  Info,
   CheckCircle2,
   XCircle,
   Network,
-  Maximize2,
 } from 'lucide-react';
 import { ConsensusGraphData, GraphNode, GraphEdge } from '../types/attendance';
 
@@ -34,6 +31,7 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
   const [isSimulating, setIsSimulating] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<(GraphNode & { x: number; y: number; vx: number; vy: number })[]>([]);
   const draggedNodeRef = useRef<any>(null);
 
@@ -93,8 +91,8 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
   // Initialize node coordinates for force simulation
   const initNodes = (incomingNodes: GraphNode[]) => {
     const existing = new Map(nodesRef.current.map((n) => [n.id, n]));
-    const width = canvasRef.current?.width || 800;
-    const height = canvasRef.current?.height || 500;
+    const width = canvasRef.current?.width || 720;
+    const height = canvasRef.current?.height || 460;
     const cx = width / 2;
     const cy = height / 2;
 
@@ -104,9 +102,8 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
         return { ...n, x: old.x, y: old.y, vx: old.vx * 0.5, vy: old.vy * 0.5 };
       }
 
-      // Arrange in circle initially
       const angle = (idx / Math.max(incomingNodes.length, 1)) * Math.PI * 2;
-      const radius = n.status === 'REJECTED_OUTLIER' ? 220 : 120;
+      const radius = n.status === 'REJECTED_OUTLIER' ? 180 : 100;
       return {
         ...n,
         x: cx + Math.cos(angle) * radius + (Math.random() - 0.5) * 20,
@@ -140,8 +137,8 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
           const dx = nodes[j].x - nodes[i].x;
           const dy = nodes[j].y - nodes[i].y;
           const dist = Math.hypot(dx, dy) || 1;
-          const minDist = 90;
-          if (dist < 260) {
+          const minDist = 80;
+          if (dist < 220) {
             const force = (minDist * minDist) / (dist * dist);
             const fx = (dx / dist) * force * 0.8;
             const fy = (dy / dist) * force * 0.8;
@@ -161,7 +158,7 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
           const dx = tgt.x - src.x;
           const dy = tgt.y - src.y;
           const dist = Math.hypot(dx, dy) || 1;
-          const targetDist = 120;
+          const targetDist = 110;
           const force = (dist - targetDist) * 0.04;
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
@@ -175,7 +172,7 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
       // Center gravity
       for (const n of nodes) {
         if (n !== draggedNodeRef.current) {
-          const gravityTargetX = n.status === 'REJECTED_OUTLIER' ? cx + 240 : cx;
+          const gravityTargetX = n.status === 'REJECTED_OUTLIER' ? cx + 180 : cx;
           const gravityTargetY = cy;
           n.vx += (gravityTargetX - n.x) * 0.01;
           n.vy += (gravityTargetY - n.y) * 0.01;
@@ -188,8 +185,8 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
           n.y += n.vy;
 
           // Boundaries
-          n.x = Math.max(50, Math.min(width - 50, n.x));
-          n.y = Math.max(50, Math.min(height - 50, n.y));
+          n.x = Math.max(40, Math.min(width - 40, n.x));
+          n.y = Math.max(40, Math.min(height - 40, n.y));
         }
       }
 
@@ -218,25 +215,24 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
         const src = nodes.find((n) => n.id === edge.source);
         const tgt = nodes.find((n) => n.id === edge.target);
         if (src && tgt) {
-          const isHighlighted = selectedNode && (selectedNode.id === src.id || selectedNode.id === tgt.id);
-          ctx.strokeStyle = isHighlighted ? '#10b981' : '#334155';
-          ctx.lineWidth = isHighlighted ? 3 : Math.min(5, Math.max(1.5, edge.inliers * 0.04));
+          const isHighlighted = selectedNode && (selectedNode.id === edge.source || selectedNode.id === edge.target);
 
           ctx.beginPath();
           ctx.moveTo(src.x, src.y);
           ctx.lineTo(tgt.x, tgt.y);
+          ctx.strokeStyle = isHighlighted ? '#10b981' : 'rgba(99, 102, 241, 0.4)';
+          ctx.lineWidth = isHighlighted ? 2.5 : Math.min(3, Math.max(1, edge.inliers * 0.03));
           ctx.stroke();
 
-          // Inlier text badge on midpoint
+          // Inlier count pill on edge midpoint
           const midX = (src.x + tgt.x) / 2;
           const midY = (src.y + tgt.y) / 2;
 
           ctx.fillStyle = '#0f172a';
-          ctx.beginPath();
-          ctx.roundRect(midX - 22, midY - 9, 44, 18, 4);
-          ctx.fill();
-          ctx.strokeStyle = '#1e293b';
-          ctx.stroke();
+          ctx.fillRect(midX - 18, midY - 7, 36, 14);
+          ctx.strokeStyle = isHighlighted ? '#10b981' : '#334155';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(midX - 18, midY - 7, 36, 14);
 
           ctx.fillStyle = isHighlighted ? '#34d399' : '#94a3b8';
           ctx.font = 'bold 9px monospace';
@@ -251,12 +247,12 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
         const isSelected = selectedNode?.id === n.id;
         const isPresent = n.status === 'PRESENT';
         const isAnchor = n.is_anchor;
-        const radius = isAnchor ? 28 : 22;
+        const radius = isAnchor ? 26 : 20;
 
         // Node Outer Glow / Shadow
         if (isPresent || isAnchor) {
           ctx.shadowColor = isAnchor ? '#eab308' : '#10b981';
-          ctx.shadowBlur = isSelected ? 20 : 10;
+          ctx.shadowBlur = isSelected ? 18 : 8;
         } else {
           ctx.shadowColor = '#ef4444';
           ctx.shadowBlur = isSelected ? 16 : 6;
@@ -281,18 +277,18 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
 
         // Node Label
         ctx.fillStyle = '#f8fafc';
-        ctx.font = isSelected ? 'bold 12px sans-serif' : '11px sans-serif';
+        ctx.font = isSelected ? 'bold 11px sans-serif' : '10px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillText(n.label, n.x, n.y + radius + 6);
+        ctx.fillText(n.label, n.x, n.y + radius + 4);
 
         // Status pill
         ctx.fillStyle = isPresent ? '#059669' : '#dc2626';
         ctx.font = 'bold 9px monospace';
         ctx.fillText(
-          isAnchor ? 'TARGET ANCHOR' : isPresent ? `PRESENT (${n.inliers_max} pts)` : 'OUTLIER',
+          isAnchor ? 'ANCHOR' : isPresent ? `PRESENT (${n.inliers_max}p)` : 'OUTLIER',
           n.x,
-          n.y + radius + 20
+          n.y + radius + 18
         );
       }
 
@@ -303,15 +299,23 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
     return () => cancelAnimationFrame(animId);
   }, [graphData, selectedNode]);
 
-  // Handle Dragging and Clicking on Nodes
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Universal Touch & Mouse Coordinate Mapper (Properly scales CSS pixels to Canvas resolution!)
+  const getCanvasCoords = (clientX: number, clientY: number): { x: number; y: number } | null => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
+  };
 
-    const hit = nodesRef.current.find((n) => Math.hypot(n.x - x, n.y - y) <= 30);
+  const handlePointerDown = (clientX: number, clientY: number) => {
+    const coords = getCanvasCoords(clientX, clientY);
+    if (!coords) return;
+    const hit = nodesRef.current.find((n) => Math.hypot(n.x - coords.x, n.y - coords.y) <= 32);
     if (hit) {
       draggedNodeRef.current = hit;
       setSelectedNode(hit);
@@ -320,17 +324,19 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (draggedNodeRef.current && canvasRef.current) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      draggedNodeRef.current.x = e.clientX - rect.left;
-      draggedNodeRef.current.y = e.clientY - rect.top;
-      draggedNodeRef.current.vx = 0;
-      draggedNodeRef.current.vy = 0;
+  const handlePointerMove = (clientX: number, clientY: number) => {
+    if (draggedNodeRef.current) {
+      const coords = getCanvasCoords(clientX, clientY);
+      if (coords) {
+        draggedNodeRef.current.x = coords.x;
+        draggedNodeRef.current.y = coords.y;
+        draggedNodeRef.current.vx = 0;
+        draggedNodeRef.current.vy = 0;
+      }
     }
   };
 
-  const handleMouseUp = () => {
+  const handlePointerUp = () => {
     draggedNodeRef.current = null;
   };
 
@@ -372,210 +378,188 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
-      {/* Top Controls Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between pb-4 border-b border-slate-800 gap-4">
+    <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 w-full">
+      {/* Top Header & Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-3">
         <div>
           <div className="flex items-center space-x-2">
-            <span className="p-2 rounded-xl bg-indigo-950 text-indigo-400 border border-indigo-800/60">
-              <Network className="w-6 h-6" />
+            <span className="p-2 rounded-xl bg-indigo-950 text-indigo-400 border border-indigo-800/60 flex-shrink-0">
+              <Network className="w-5 h-5" />
             </span>
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">Professor Live Dashboard</h2>
-              <p className="text-xs sm:text-sm text-slate-400">
-                Peer RANSAC Consensus Graph Verification (Mode:{' '}
-                <span className="text-indigo-400 font-medium">Zero-Touch Peer Consensus</span>)
+              <h2 className="text-lg sm:text-2xl font-bold text-white tracking-tight">Professor Dashboard</h2>
+              <p className="text-[11px] sm:text-xs text-slate-400">
+                Mode: <span className="text-indigo-400 font-medium">Zero-Touch Peer Consensus</span> (≥15 inliers)
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Live WS Status Badge */}
-          <div className="flex items-center px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono">
-            <Radio className={`w-3.5 h-3.5 mr-1.5 ${wsConnected ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
+          {/* WS Status Badge */}
+          <div className="flex items-center px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono">
+            <Radio className={`w-3 h-3 mr-1.5 ${wsConnected ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
             <span className={wsConnected ? 'text-emerald-300' : 'text-slate-400'}>
-              {wsConnected ? 'Live WebSocket Connected' : 'Polling Backend'}
+              {wsConnected ? 'Live' : 'Polling'}
             </span>
           </div>
 
-          {/* 1-Click Simulator Button */}
-          <button
-            onClick={handleTriggerSimulation}
-            disabled={isSimulating}
-            className="flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs sm:text-sm transition-all shadow-lg shadow-indigo-600/30 disabled:opacity-50"
-          >
-            <Sparkles className="w-4 h-4 text-indigo-200" />
-            <span>{isSimulating ? 'Running Homography Matching...' : 'Simulate Classroom (5 Students + 1 Spoofer)'}</span>
-          </button>
-
           {/* Reset Button */}
           <button
+            type="button"
             onClick={handleResetSession}
-            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-all"
-            title="Reset active session submissions"
+            className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-all min-h-[42px]"
+            title="Reset active session"
           >
             <RotateCcw className="w-4 h-4" />
+          </button>
+
+          {/* 1-Click Simulator Button */}
+          <button
+            type="button"
+            onClick={handleTriggerSimulation}
+            disabled={isSimulating}
+            className="flex-1 sm:flex-none flex items-center justify-center space-x-1.5 px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-medium text-xs sm:text-sm transition-all shadow-lg shadow-indigo-600/30 disabled:opacity-50 min-h-[42px]"
+          >
+            <Sparkles className="w-4 h-4 text-indigo-200 flex-shrink-0" />
+            <span>{isSimulating ? 'Simulating...' : 'Simulate Classroom (5 Students + 1 Spoofer)'}</span>
           </button>
         </div>
       </div>
 
       {/* Stats Summary Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
-          <span className="text-xs text-slate-400">Total Check-Ins</span>
-          <p className="text-2xl font-bold font-mono text-white mt-1">{graphData.total_submissions}</p>
-          <span className="text-[11px] text-slate-500">Dual-camera submissions</span>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 sm:p-4">
+          <span className="text-[11px] text-slate-400 block">Total Check-Ins</span>
+          <p className="text-xl sm:text-2xl font-bold font-mono text-white mt-0.5">{graphData.total_submissions}</p>
+          <span className="text-[10px] text-slate-500">Submissions</span>
         </div>
 
-        <div className="bg-slate-900/60 border border-emerald-900/40 rounded-2xl p-4">
-          <span className="text-xs text-emerald-400">Verified Present</span>
-          <p className="text-2xl font-bold font-mono text-emerald-400 mt-1">{graphData.consensus_cluster_size}</p>
-          <span className="text-[11px] text-emerald-500/80">Dominant RANSAC cluster</span>
+        <div className="bg-slate-900/80 border border-emerald-900/50 rounded-2xl p-3 sm:p-4">
+          <span className="text-[11px] text-emerald-400 block">Verified Present</span>
+          <p className="text-xl sm:text-2xl font-bold font-mono text-emerald-400 mt-0.5">{graphData.consensus_cluster_size}</p>
+          <span className="text-[10px] text-emerald-500/80">Inliers ≥ 15</span>
         </div>
 
-        <div className="bg-slate-900/60 border border-red-900/40 rounded-2xl p-4">
-          <span className="text-xs text-red-400">Outliers / Spoofers</span>
-          <p className="text-2xl font-bold font-mono text-red-400 mt-1">{graphData.outliers_count}</p>
-          <span className="text-[11px] text-red-500/80">&lt; 15 peer inliers</span>
+        <div className="bg-slate-900/80 border border-red-900/50 rounded-2xl p-3 sm:p-4">
+          <span className="text-[11px] text-red-400 block">Outliers / Spoofers</span>
+          <p className="text-xl sm:text-2xl font-bold font-mono text-red-400 mt-0.5">{graphData.outliers_count}</p>
+          <span className="text-[10px] text-red-500/80">Rejected</span>
         </div>
 
-        <div className="bg-slate-900/60 border border-indigo-900/40 rounded-2xl p-4">
-          <span className="text-xs text-indigo-400">Consensus Inlier Threshold</span>
-          <p className="text-2xl font-bold font-mono text-indigo-300 mt-1">≥ 15 pts</p>
-          <span className="text-[11px] text-indigo-400/80">Pairwise Lowe & RANSAC</span>
+        <div className="bg-slate-900/80 border border-indigo-900/50 rounded-2xl p-3 sm:p-4">
+          <span className="text-[11px] text-indigo-400 block">Consensus Threshold</span>
+          <p className="text-xl sm:text-2xl font-bold font-mono text-indigo-300 mt-0.5">≥ 15 pts</p>
+          <span className="text-[10px] text-indigo-400/80">RANSAC Homography</span>
         </div>
       </div>
 
-      {/* Main Interactive Force-Directed Consensus Graph */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col">
-          <div className="flex items-center justify-between mb-3 text-xs">
+      {/* Main Interactive Consensus Graph */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-3 sm:p-4 flex flex-col shadow-xl">
+          <div className="flex items-center justify-between mb-2 text-xs">
             <span className="font-semibold text-slate-200 flex items-center">
-              <Network className="w-4 h-4 mr-1.5 text-indigo-400" />
-              Force-Directed Geometric Consensus Graph
+              <Network className="w-3.5 h-3.5 mr-1 text-indigo-400" />
+              Force-Directed Consensus Graph
             </span>
-            <span className="text-slate-400">Drag nodes to explore peer clusters</span>
+            <span className="text-[11px] text-slate-400">Touch & drag nodes</span>
           </div>
 
-          <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-[#060a12] shadow-2xl flex-1 min-h-[460px]">
+          <div
+            ref={containerRef}
+            className="relative rounded-xl overflow-hidden border border-slate-800 bg-[#060a12] shadow-2xl flex-1 min-h-[360px] sm:min-h-[440px] touch-none"
+          >
             <canvas
               ref={canvasRef}
-              width={820}
-              height={480}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
+              width={720}
+              height={440}
+              onMouseDown={(e) => handlePointerDown(e.clientX, e.clientY)}
+              onMouseMove={(e) => handlePointerMove(e.clientX, e.clientY)}
+              onMouseUp={handlePointerUp}
+              onTouchStart={(e) => {
+                if (e.touches.length > 0) {
+                  handlePointerDown(e.touches[0].clientX, e.touches[0].clientY);
+                }
+              }}
+              onTouchMove={(e) => {
+                if (e.touches.length > 0) {
+                  handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+                }
+              }}
+              onTouchEnd={handlePointerUp}
               className="w-full h-full block cursor-grab active:cursor-grabbing"
             />
 
             {graphData.nodes.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center space-y-3 pointer-events-none">
-                <Network className="w-12 h-12 text-slate-700 animate-pulse" />
-                <p className="text-sm font-medium text-slate-400">
+                <Network className="w-10 h-10 text-slate-700 animate-pulse" />
+                <p className="text-xs sm:text-sm font-medium text-slate-400">
                   No submissions yet in this session.
                 </p>
-                <p className="text-xs text-slate-500 max-w-sm">
-                  Click the <strong className="text-indigo-400">"Simulate Classroom (5 Students + 1 Spoofer)"</strong> button above to run the live demonstration.
+                <p className="text-[11px] text-slate-500 max-w-xs">
+                  Tap <strong className="text-indigo-400">"Simulate Classroom"</strong> above to see the 5 students cluster and 1 spoofer get isolated.
                 </p>
               </div>
             )}
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2">
-            <div className="flex items-center space-x-4">
-              <span className="flex items-center">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1.5"></span>
-                Dominant Cluster (Present)
-              </span>
-              <span className="flex items-center">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 mr-1.5"></span>
-                Outlier (Isolated)
-              </span>
-            </div>
-            <span>Edges = Pairwise RANSAC inliers (w ≥ 15)</span>
           </div>
         </div>
 
-        {/* Selected Node Details Card / Roster */}
-        <div className="space-y-4">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-slate-200 flex items-center">
-              <Info className="w-4 h-4 mr-2 text-indigo-400" />
-              {selectedNode ? 'Student Node Details' : 'Node Inspector'}
+        {/* Selected Node Details Drawer */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-xl">
+          <div>
+            <h3 className="text-sm font-semibold text-white mb-3 flex items-center">
+              <Users className="w-4 h-4 mr-1.5 text-indigo-400" />
+              <span>Student Node Inspector</span>
             </h3>
 
             {selectedNode ? (
-              <div className="space-y-3 text-xs">
+              <div className="space-y-3">
                 <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800">
-                  <span className="text-slate-400">Student Name</span>
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider">Student Name</span>
                   <p className="text-sm font-bold text-white mt-0.5">{selectedNode.label}</p>
-                  <p className="text-slate-500 font-mono mt-0.5">ID: {selectedNode.id}</p>
+                  <p className="text-xs font-mono text-slate-400">ID: {selectedNode.id}</p>
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex justify-between items-center">
-                  <span className="text-slate-400">Consensus Status</span>
-                  <span className={`font-mono font-bold px-2 py-0.5 rounded ${
-                    selectedNode.status === 'PRESENT'
-                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/60'
-                      : 'bg-red-950 text-red-400 border border-red-800/60'
-                  }`}>
-                    {selectedNode.status}
-                  </span>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800">
+                    <span className="text-slate-400 text-[10px]">Consensus Status</span>
+                    <p className={`font-bold mt-0.5 text-xs ${
+                      selectedNode.status === 'PRESENT' ? 'text-emerald-400' : 'text-red-400'
+                    }`}>
+                      {selectedNode.status}
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800">
+                    <span className="text-slate-400 text-[10px]">Max Inliers</span>
+                    <p className="font-mono font-bold text-white mt-0.5 text-xs">
+                      {selectedNode.inliers_max} pts
+                    </p>
+                  </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex justify-between items-center">
-                  <span className="text-slate-400">Max Peer RANSAC Inliers</span>
-                  <span className="text-emerald-400 font-mono font-bold">
-                    {selectedNode.inliers_max} inliers
-                  </span>
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex justify-between items-center">
-                  <span className="text-slate-400">Face Verification (On-Device)</span>
-                  <span className="text-emerald-400 font-semibold">Passed</span>
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex justify-between items-center">
-                  <span className="text-slate-400">Motion Bridge (Lucas-Kanade)</span>
-                  <span className="text-cyan-400 font-semibold">Coherence OK</span>
+                <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Face Verified:</span>
+                    <span className="text-emerald-400 font-medium">PASS</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Motion Continuity:</span>
+                    <span className="text-emerald-400 font-medium">PASS</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">RANSAC Inliers ≥ 15:</span>
+                    <span className={selectedNode.inliers_max >= 15 ? 'text-emerald-400 font-medium' : 'text-red-400 font-medium'}>
+                      {selectedNode.inliers_max >= 15 ? 'MATCHED' : 'REJECTED'}
+                    </span>
+                  </div>
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-slate-500">
-                Click any node on the force graph to inspect its verified RANSAC inlier edges and telemetry.
-              </p>
+              <div className="py-8 text-center text-slate-500 text-xs">
+                Tap or click any student node on the graph to inspect inliers and verification metrics.
+              </div>
             )}
-          </div>
-
-          {/* Roster Table Summary */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <h4 className="text-xs font-semibold text-slate-300">Live Roster ({graphData.nodes.length})</h4>
-            <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
-              {graphData.nodes.map((n) => (
-                <div
-                  key={n.id}
-                  onClick={() => setSelectedNode(n)}
-                  className={`p-2 rounded-lg text-xs flex items-center justify-between cursor-pointer transition-all ${
-                    selectedNode?.id === n.id
-                      ? 'bg-indigo-950/60 border border-indigo-700/60'
-                      : 'bg-slate-950/50 hover:bg-slate-900 border border-slate-800/40'
-                  }`}
-                >
-                  <div className="truncate pr-2">
-                    <span className="font-medium text-slate-200 block truncate">{n.label}</span>
-                    <span className="text-[10px] font-mono text-slate-500">{n.id}</span>
-                  </div>
-                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${
-                    n.status === 'PRESENT'
-                      ? 'bg-emerald-950 text-emerald-400'
-                      : 'bg-red-950 text-red-400'
-                  }`}>
-                    {n.status === 'PRESENT' ? `${n.inliers_max} inliers` : 'OUTLIER'}
-                  </span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </div>

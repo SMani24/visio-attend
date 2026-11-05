@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ShieldCheck, Eye, Download, Copy, Check, FileJson, Info, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Eye, Copy, Check, FileJson, Info, ArrowLeft } from 'lucide-react';
 import { AttendanceSubmissionPayload } from '../types/attendance';
 
 interface PrivacyInspectorProps {
@@ -10,7 +10,7 @@ interface PrivacyInspectorProps {
 export const PrivacyInspector: React.FC<PrivacyInspectorProps> = ({ payload, onClose }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
-  const [showRawJson, setShowRawJson] = useState(false);
+  const [viewMode, setViewMode] = useState<'visual' | 'json'>('visual');
 
   // Default sample payload if none is provided yet
   const activePayload: AttendanceSubmissionPayload = payload || {
@@ -71,7 +71,7 @@ export const PrivacyInspector: React.FC<PrivacyInspectorProps> = ({ payload, onC
     const scaleX = w / (activePayload.scene_features.frame_width || 640);
     const scaleY = h / (activePayload.scene_features.frame_height || 480);
 
-    // 1. Draw 500 green ORB keypoint dots
+    // 1. Draw green ORB keypoint dots
     ctx.fillStyle = '#10b981';
     ctx.shadowColor = '#10b981';
     ctx.shadowBlur = 4;
@@ -87,7 +87,6 @@ export const PrivacyInspector: React.FC<PrivacyInspectorProps> = ({ payload, onC
       ctx.fill();
     }
 
-    // Reset shadow
     ctx.shadowBlur = 0;
 
     // 2. Draw Optical Flow Vector Arrow
@@ -98,191 +97,170 @@ export const PrivacyInspector: React.FC<PrivacyInspectorProps> = ({ payload, onC
 
       let dx = 0;
       let dy = 0;
-      if (flow.observed_flow_direction === 'LEFT_IMAGE_COORDS') dx = -80;
-      else if (flow.observed_flow_direction === 'RIGHT_IMAGE_COORDS') dx = 80;
-      else if (flow.observed_flow_direction === 'UP_IMAGE_COORDS') dy = -80;
-      else if (flow.observed_flow_direction === 'DOWN_IMAGE_COORDS') dy = 80;
-      else dx = -80;
+      if (flow.observed_flow_direction === 'LEFT_IMAGE_COORDS') dx = -70;
+      else if (flow.observed_flow_direction === 'RIGHT_IMAGE_COORDS') dx = 70;
+      else if (flow.observed_flow_direction === 'UP_IMAGE_COORDS') dy = -70;
+      else if (flow.observed_flow_direction === 'DOWN_IMAGE_COORDS') dy = 70;
+      else dx = -70;
 
-      // Draw arrow line
       ctx.strokeStyle = '#06b6d4';
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 3.5;
       ctx.beginPath();
       ctx.moveTo(centerX, centerY);
       ctx.lineTo(centerX + dx, centerY + dy);
       ctx.stroke();
 
-      // Arrow head
       ctx.fillStyle = '#06b6d4';
       ctx.beginPath();
-      ctx.arc(centerX + dx, centerY + dy, 7, 0, Math.PI * 2);
+      ctx.arc(centerX + dx, centerY + dy, 6, 0, Math.PI * 2);
       ctx.fill();
 
-      // Label
       ctx.fillStyle = '#38bdf8';
-      ctx.font = 'bold 12px monospace';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
       ctx.fillText(
-        `Optical Flow: ${flow.observed_flow_direction} (${flow.mean_flow_magnitude_px}px, C=${flow.flow_coherence})`,
-        centerX - 100,
-        centerY + (dy !== 0 ? dy * 1.3 : 40)
+        `Flow: ${flow.observed_flow_direction} (C=${flow.flow_coherence})`,
+        centerX,
+        centerY + (dy !== 0 ? dy * 1.3 : 30)
       );
     }
 
     // Watermark tag
-    ctx.fillStyle = '#334155';
-    ctx.font = '11px monospace';
-    ctx.fillText('NO RAW IMAGES TRANSMITTED - MATHEMATICAL DESCRIPTORS ONLY', 15, h - 15);
-  }, [activePayload]);
+    ctx.fillStyle = '#475569';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('ZERO RAW IMAGES TRANSMITTED - MATHEMATICAL DESCRIPTORS ONLY', 12, h - 12);
+  }, [activePayload, viewMode]);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(jsonString);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(jsonString).catch(() => {});
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-3">
-        <div>
-          <div className="flex items-center space-x-2">
-            <span className="p-2 rounded-xl bg-emerald-950 text-emerald-400 border border-emerald-800/60">
-              <Eye className="w-6 h-6" />
-            </span>
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">The "Privacy Inspector"</h2>
-              <p className="text-xs sm:text-sm text-slate-400">Verifying what leaves your smartphone during attendance check-in</p>
-            </div>
-          </div>
-        </div>
-
+    <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6 w-full">
+      {/* Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-3">
         <div className="flex items-center space-x-2">
-          <div className="px-3 py-1.5 rounded-lg bg-emerald-950/80 border border-emerald-800/50 flex items-center space-x-2 text-xs font-mono text-emerald-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Payload Size: ~{payloadKb} KB</span>
-          </div>
           {onClose && (
             <button
+              type="button"
               onClick={onClose}
-              className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+              className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 mr-1"
+              title="Return to Check-In"
             >
-              Close
+              <ArrowLeft className="w-4 h-4" />
             </button>
           )}
-        </div>
-      </div>
-
-      {/* Main Pitch-Black Canvas & Telemetry */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Pitch-Black Canvas */}
-        <div className="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col items-center">
-          <div className="w-full flex items-center justify-between mb-3 text-xs text-slate-400">
-            <span className="flex items-center font-medium text-emerald-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 mr-1.5"></span>
-              Pitch-Black Wireframe (500 ORB Dots + Motion Vector)
-            </span>
-            <span className="font-mono text-slate-500">Zero Raw Pixels</span>
-          </div>
-
-          <div className="w-full relative rounded-xl overflow-hidden border border-slate-800 shadow-2xl bg-black">
-            <canvas
-              ref={canvasRef}
-              width={640}
-              height={440}
-              className="w-full h-auto block"
-            />
-          </div>
-
-          <div className="w-full mt-3 flex items-center justify-between text-xs text-slate-500">
-            <span>Green dots: 256-bit ORB Keypoints</span>
-            <span>Cyan arrow: LK Optical Flow continuity</span>
-          </div>
-        </div>
-
-        {/* Telemetry Breakdown Card */}
-        <div className="space-y-4">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-slate-200 flex items-center">
-              <ShieldCheck className="w-4 h-4 mr-2 text-emerald-400" />
-              Privacy Assurance Guarantee
-            </h3>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex justify-between items-center">
-                <span className="text-slate-400">Front Camera Raw Video</span>
-                <span className="text-emerald-400 font-mono font-bold">0 KB (In RAM)</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex justify-between items-center">
-                <span className="text-slate-400">Rear Camera Raw Photo</span>
-                <span className="text-emerald-400 font-mono font-bold">0 KB (Freed)</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex justify-between items-center">
-                <span className="text-slate-400">Bystander Faces Redacted</span>
-                <span className="text-emerald-400 font-mono font-bold">
-                  {activePayload.scene_features.redacted_faces_count} Faces Masked
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex justify-between items-center">
-                <span className="text-slate-400">Sparse ORB Coordinates</span>
-                <span className="text-slate-200 font-mono">
-                  {activePayload.scene_features.keypoint_count} pts (~6 KB)
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex justify-between items-center">
-                <span className="text-slate-400">Binary BRIEF Descriptors</span>
-                <span className="text-slate-200 font-mono">
-                  {activePayload.scene_features.keypoint_count} × 32B (~12 KB)
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-900/40 flex justify-between items-center">
-                <span className="text-indigo-300 font-medium">Total Network Payload</span>
-                <span className="text-indigo-300 font-mono font-bold">~{payloadKb} KB</span>
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <button
-                onClick={() => setShowRawJson(!showRawJson)}
-                className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center justify-center space-x-2 transition-all"
-              >
-                <FileJson className="w-4 h-4" />
-                <span>{showRawJson ? 'Hide Raw JSON' : 'Inspect Raw JSON Payload'}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-emerald-950/20 border border-emerald-900/40 rounded-2xl p-4 text-xs text-emerald-300 space-y-2">
-            <div className="flex items-center space-x-1.5 font-semibold text-emerald-400">
-              <Info className="w-4 h-4" />
-              <span>Why This Cannot Be Inverted:</span>
-            </div>
-            <p className="text-slate-400 leading-relaxed">
-              Binary ORB descriptors represent intensity comparisons across pairwise pixel patches. Keypoint coordinates discard all photographic textures, lighting, color, and identity pixels, rendering full scene or facial image reconstruction mathematically infeasible.
+          <span className="p-2 rounded-xl bg-emerald-950 text-emerald-400 border border-emerald-800/60 flex-shrink-0">
+            <Eye className="w-5 h-5" />
+          </span>
+          <div>
+            <h2 className="text-lg sm:text-2xl font-bold text-white tracking-tight">Privacy Inspector</h2>
+            <p className="text-[11px] sm:text-xs text-slate-400">
+              "What Leaves My Phone?" Visual Proof of Zero Raw Images
             </p>
           </div>
         </div>
-      </div>
 
-      {/* Raw JSON Modal / Dropdown */}
-      {showRawJson && (
-        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-mono text-slate-400">POST /api/attendance/submit JSON Payload</span>
+        <div className="flex items-center gap-2">
+          {/* Toggle View Tabs */}
+          <div className="flex rounded-xl bg-slate-900 p-1 border border-slate-800">
             <button
-              onClick={handleCopy}
-              className="flex items-center space-x-1.5 px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 transition-all"
+              type="button"
+              onClick={() => setViewMode('visual')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                viewMode === 'visual'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copied!' : 'Copy JSON'}</span>
+              Keypoints
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('json')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                viewMode === 'json'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              JSON ({payloadKb} KB)
             </button>
           </div>
 
-          <pre className="p-4 rounded-xl bg-black/80 border border-slate-800 text-[11px] font-mono text-emerald-400/90 overflow-x-auto max-h-64 leading-tight">
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center space-x-1 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-medium border border-slate-800 min-h-[38px]"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+            <span>{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Metrics Banner */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 sm:p-4 text-center">
+          <span className="text-[10px] sm:text-xs text-slate-400 uppercase tracking-wider block">Raw Photos Sent</span>
+          <p className="text-xl sm:text-2xl font-bold font-mono text-emerald-400 mt-0.5">0.00 KB</p>
+          <span className="text-[10px] text-emerald-500 font-medium">100% On-Device</span>
+        </div>
+
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 sm:p-4 text-center">
+          <span className="text-[10px] sm:text-xs text-slate-400 uppercase tracking-wider block">Payload Size</span>
+          <p className="text-xl sm:text-2xl font-bold font-mono text-indigo-400 mt-0.5">{payloadKb} KB</p>
+          <span className="text-[10px] text-slate-500">JSON descriptors</span>
+        </div>
+
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 sm:p-4 text-center">
+          <span className="text-[10px] sm:text-xs text-slate-400 uppercase tracking-wider block">Sparse Keypoints</span>
+          <p className="text-xl sm:text-2xl font-bold font-mono text-white mt-0.5">
+            {activePayload.scene_features.keypoint_count}
+          </p>
+          <span className="text-[10px] text-slate-500">ORB 256-bit BRIEF</span>
+        </div>
+      </div>
+
+      {/* Main View Area */}
+      {viewMode === 'visual' ? (
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 sm:p-5 space-y-3 shadow-xl">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span className="font-semibold text-slate-200">
+              Pitch-Black Keypoint Canvas
+            </span>
+            <span className="text-emerald-400 text-[11px]">
+              Only coordinates leave your phone
+            </span>
+          </div>
+
+          <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-black aspect-[4/3] w-full max-w-full flex items-center justify-center">
+            <canvas
+              ref={canvasRef}
+              width={640}
+              height={480}
+              className="w-full h-full block object-contain"
+            />
+          </div>
+
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            This pitch-black canvas visually demonstrates the non-invertibility of the data transmitted.
+            The green dots represent sparse mathematical corner coordinates $(x, y)$, and the cyan vector represents the verified optical flow direction. <strong>No photo of your face, classroom, or peers is ever stored or transmitted.</strong>
+          </p>
+        </div>
+      ) : (
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-3 sm:p-5 space-y-3 shadow-xl">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-slate-200">Raw JSON Payload (`POST /api/attendance/submit`)</span>
+            <span className="font-mono text-slate-400 text-[11px]">{payloadBytes} bytes</span>
+          </div>
+
+          <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-emerald-400 overflow-x-auto max-h-[460px] select-all">
             {jsonString}
           </pre>
         </div>
