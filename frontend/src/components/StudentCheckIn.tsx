@@ -23,7 +23,7 @@ import {
   MotionBridge,
   SceneFeatures,
 } from '../types/attendance';
-import { getEnrolledStudent, computeCosineSimilarity, computeEAR, estimateYawAngleDeg } from '../services/faceVerifier';
+import { getEnrolledStudent } from '../services/faceVerifier';
 import { computeLucasKanadeOpticalFlow, DirectionPrompt } from '../services/opticalFlow';
 import { extractORBFeatures } from '../services/orbExtractor';
 import { safeRequestCameraStream, checkCameraCapabilities } from '../services/cameraHelper';
@@ -70,6 +70,14 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
     }
   }, []);
 
+  // Ensure live video stream binds to video element when mounted
+  useEffect(() => {
+    if (videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [stage, isCameraLive]);
+
   useEffect(() => {
     return () => {
       stopCamera();
@@ -89,8 +97,8 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
     setIsCameraLive(false);
   };
 
-  // Phase 1: Start Front Camera for Face Verification & Liveness
-  const handleStartCheckIn = async () => {
+  // Phase 1: Start Front Camera for Face Verification & Liveness (Instant Transition!)
+  const handleStartCheckIn = () => {
     setErrorMessage('');
     const student = profile || {
       student_id: '99102345',
@@ -108,21 +116,17 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
     setEarValue(0.32);
     setYawValue(0);
 
-    // Try starting physical front camera
-    const { stream } = await safeRequestCameraStream('user');
-    if (stream) {
-      streamRef.current = stream;
-      setIsCameraLive(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+    // Request front camera asynchronously without blocking stage transition
+    safeRequestCameraStream('user').then(({ stream }) => {
+      if (stream) {
+        streamRef.current = stream;
+        setIsCameraLive(true);
       }
-    } else {
-      setIsCameraLive(false);
-    }
+    }).catch(() => {});
 
-    // Monitor / simulate liveness challenge completion
+    // Active liveness progress simulation/detection
     let counter = 0;
+    if (intervalRef.current) clearInterval(intervalRef.current);
     intervalRef.current = setInterval(() => {
       counter++;
       if (challenge === 'BLINK') {
@@ -131,6 +135,7 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
           setEarValue(0.34); // Recovery
           setLivenessPassed(true);
           clearInterval(intervalRef.current);
+          intervalRef.current = null;
           setTimeout(() => triggerMotionBridge(), 700);
         }
       } else {
@@ -138,6 +143,7 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
         if (counter >= 4) {
           setLivenessPassed(true);
           clearInterval(intervalRef.current);
+          intervalRef.current = null;
           setTimeout(() => triggerMotionBridge(), 700);
         }
       }
@@ -145,7 +151,7 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
   };
 
   // Phase 2: Transition to Motion Bridge & Rear Camera
-  const triggerMotionBridge = async () => {
+  const triggerMotionBridge = () => {
     setStage('MOTION_BRIDGE');
     stopCamera();
     const switchStart = Date.now();
@@ -155,18 +161,13 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
     const chosenDir = dirs[Math.floor(Math.random() * dirs.length)];
     setPromptedDirection(chosenDir);
 
-    // Attempt rear camera open
-    const { stream } = await safeRequestCameraStream('environment');
-    if (stream) {
-      streamRef.current = stream;
-      setIsCameraLive(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+    // Request rear camera asynchronously
+    safeRequestCameraStream('environment').then(({ stream }) => {
+      if (stream) {
+        streamRef.current = stream;
+        setIsCameraLive(true);
       }
-    } else {
-      setIsCameraLive(false);
-    }
+    }).catch(() => {});
 
     const switchDelta = Date.now() - switchStart;
     setCameraSwitchMs(Math.max(520, switchDelta));
@@ -296,9 +297,9 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
   };
 
   return (
-    <div className="max-w-xl mx-auto space-y-5 w-full">
+    <div className="max-w-xl mx-auto space-y-4 sm:space-y-5 w-full">
       {/* Title Card */}
-      <div className="text-center space-y-1.5">
+      <div className="text-center space-y-1">
         <div className="inline-flex items-center justify-center w-11 h-11 rounded-2xl bg-indigo-950/90 text-indigo-400 border border-indigo-800/60 shadow-lg shadow-indigo-900/30">
           <Camera className="w-5 h-5" />
         </div>

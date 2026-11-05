@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Camera, CheckCircle2, User, Hash, ShieldCheck, RefreshCw, Sparkles, AlertCircle, ArrowLeft, ArrowRight, UserCheck } from 'lucide-react';
+import { Camera, CheckCircle2, User, Hash, ShieldCheck, RefreshCw, Sparkles } from 'lucide-react';
 import { StudentProfile } from '../types/attendance';
 import {
   getEnrolledStudent,
@@ -38,6 +38,14 @@ export const StudentEnrollment: React.FC<StudentEnrollmentProps> = ({ onEnrollme
     }
   }, []);
 
+  // Ensure live video stream binds to video element when mounted
+  useEffect(() => {
+    if (videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [currentStep, isCameraLive]);
+
   // Cleanup camera stream
   useEffect(() => {
     return () => {
@@ -45,7 +53,7 @@ export const StudentEnrollment: React.FC<StudentEnrollmentProps> = ({ onEnrollme
     };
   }, []);
 
-  const startCamera = async () => {
+  const startCamera = () => {
     const caps = checkCameraCapabilities();
     if (!caps.canAccessCamera) {
       setIsCameraLive(false);
@@ -53,19 +61,18 @@ export const StudentEnrollment: React.FC<StudentEnrollmentProps> = ({ onEnrollme
       return;
     }
 
-    const { stream, error } = await safeRequestCameraStream('user');
-    if (stream) {
-      streamRef.current = stream;
-      setIsCameraLive(true);
-      setCameraNote('Live front camera active');
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+    safeRequestCameraStream('user').then(({ stream, error }) => {
+      if (stream) {
+        streamRef.current = stream;
+        setIsCameraLive(true);
+        setCameraNote('Live front camera active');
+      } else {
+        setIsCameraLive(false);
+        setCameraNote(error || 'Camera offline. Interactive simulation enabled.');
       }
-    } else {
+    }).catch(() => {
       setIsCameraLive(false);
-      setCameraNote(error || 'Camera offline. Interactive simulation enabled.');
-    }
+    });
   };
 
   const stopCamera = () => {
@@ -76,7 +83,7 @@ export const StudentEnrollment: React.FC<StudentEnrollmentProps> = ({ onEnrollme
     setIsCameraLive(false);
   };
 
-  const handleStartEnrollment = async (e: React.FormEvent) => {
+  const handleStartEnrollment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!studentId.trim()) {
       setStatusMessage('Please enter a student university ID');
@@ -89,7 +96,7 @@ export const StudentEnrollment: React.FC<StudentEnrollmentProps> = ({ onEnrollme
 
     setCurrentStep(1);
     setStatusMessage('Angle 1 of 3: Look straight ahead with a neutral expression');
-    await startCamera();
+    startCamera();
   };
 
   const handleQuickFill = () => {
@@ -118,7 +125,6 @@ export const StudentEnrollment: React.FC<StudentEnrollmentProps> = ({ onEnrollme
     }
 
     if (!embedding || embedding.length === 0) {
-      // Deterministic synthetic high-dimensional embedding
       embedding = Array.from({ length: 128 }, (_, i) =>
         Math.sin(i * 0.35 + angleIndex * 0.12) / Math.sqrt(64)
       );
@@ -143,7 +149,6 @@ export const StudentEnrollment: React.FC<StudentEnrollmentProps> = ({ onEnrollme
     setIsProcessing(true);
     setStatusMessage('Computing 128-D averaged embedding and cryptographic commitment...');
 
-    // Average the 3 embedding vectors and L2 normalize
     const avgVec: number[] = new Array(128).fill(0);
     for (const vec of embeddings) {
       for (let i = 0; i < 128; i++) {
@@ -153,10 +158,8 @@ export const StudentEnrollment: React.FC<StudentEnrollmentProps> = ({ onEnrollme
     const norm = Math.sqrt(avgVec.reduce((sum, v) => sum + v * v, 0)) || 1.0;
     const finalEmbedding = avgVec.map((v) => v / norm);
 
-    // Compute SHA-256 commitment hash (bulletproof with pureSha256 fallback)
     const commitmentHash = await computeCommitmentHash(finalEmbedding);
 
-    // Save profile locally (strictly on-device!)
     const profile: StudentProfile = {
       student_id: studentId.trim(),
       full_name: fullName.trim(),
@@ -167,7 +170,6 @@ export const StudentEnrollment: React.FC<StudentEnrollmentProps> = ({ onEnrollme
     saveEnrolledStudent(profile);
     setEnrolledProfile(profile);
 
-    // Register commitment hash with backend (ZERO face images sent!)
     try {
       await fetch('/api/students/enroll', {
         method: 'POST',
@@ -201,9 +203,9 @@ export const StudentEnrollment: React.FC<StudentEnrollmentProps> = ({ onEnrollme
   };
 
   return (
-    <div className="max-w-xl mx-auto space-y-5 w-full">
+    <div className="max-w-xl mx-auto space-y-4 sm:space-y-5 w-full">
       {/* Title */}
-      <div className="text-center space-y-1.5">
+      <div className="text-center space-y-1">
         <div className="inline-flex items-center justify-center w-11 h-11 rounded-2xl bg-indigo-950/90 text-indigo-400 border border-indigo-800/60 shadow-lg shadow-indigo-900/30">
           <User className="w-5 h-5" />
         </div>
