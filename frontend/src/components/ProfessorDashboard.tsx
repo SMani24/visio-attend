@@ -8,6 +8,8 @@ import {
   CheckCircle2,
   XCircle,
   Network,
+  Eye,
+  Target,
 } from 'lucide-react';
 import { ConsensusGraphData, GraphNode, GraphEdge } from '../types/attendance';
 
@@ -30,6 +32,7 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [showWhiteboardTarget, setShowWhiteboardTarget] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<(GraphNode & { x: number; y: number; vx: number; vy: number })[]>([]);
@@ -357,6 +360,17 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
     }
   };
 
+  const handleActivatePeers = async () => {
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/activate-classroom-peers`, { method: 'POST' });
+      if (res.ok) {
+        fetchGraphData();
+      }
+    } catch (err) {
+      console.error('Error activating peers:', err);
+    }
+  };
+
   const handleResetSession = async () => {
     try {
       await fetch(`/api/sessions/${sessionId}/reset`, { method: 'POST' });
@@ -389,7 +403,7 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
             <div>
               <h2 className="text-lg sm:text-2xl font-bold text-white tracking-tight">Professor Dashboard</h2>
               <p className="text-[11px] sm:text-xs text-slate-400">
-                Mode: <span className="text-indigo-400 font-medium">Zero-Touch Peer Consensus</span> (≥15 inliers)
+                Mode: <span className="text-indigo-400 font-medium">Session Anchor & Peer Consensus</span> (≥15 inliers)
               </p>
             </div>
           </div>
@@ -403,6 +417,32 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
               {wsConnected ? 'Live' : 'Polling'}
             </span>
           </div>
+
+          {/* Toggle Target View Button */}
+          <button
+            type="button"
+            onClick={() => setShowWhiteboardTarget(!showWhiteboardTarget)}
+            className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-all min-h-[42px] ${
+              showWhiteboardTarget
+                ? 'bg-indigo-950 text-indigo-300 border-indigo-700/80 shadow-md shadow-indigo-900/30'
+                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+            }`}
+            title="Display whiteboard reference target"
+          >
+            <Target className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Classroom Target</span>
+          </button>
+
+          {/* Activate 5 Peers */}
+          <button
+            type="button"
+            onClick={handleActivatePeers}
+            className="flex items-center space-x-1 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition-all min-h-[42px]"
+            title="Add 5 verified students looking at the whiteboard"
+          >
+            <Users className="w-3.5 h-3.5 text-cyan-400" />
+            <span>+5 Classroom Peers</span>
+          </button>
 
           {/* Reset Button */}
           <button
@@ -419,13 +459,63 @@ export const ProfessorDashboard: React.FC<ProfessorDashboardProps> = ({ sessionI
             type="button"
             onClick={handleTriggerSimulation}
             disabled={isSimulating}
-            className="flex-1 sm:flex-none flex items-center justify-center space-x-1.5 px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-medium text-xs sm:text-sm transition-all shadow-lg shadow-indigo-600/30 disabled:opacity-50 min-h-[42px]"
+            className="flex items-center justify-center space-x-1.5 px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-medium text-xs sm:text-sm transition-all shadow-lg shadow-indigo-600/30 disabled:opacity-50 min-h-[42px]"
           >
             <Sparkles className="w-4 h-4 text-indigo-200 flex-shrink-0" />
-            <span>{isSimulating ? 'Simulating...' : 'Simulate Classroom (5 Students + 1 Spoofer)'}</span>
+            <span>{isSimulating ? 'Simulating...' : 'Simulate 5 + 1 Spoofer'}</span>
           </button>
         </div>
       </div>
+
+      {/* Classroom Whiteboard Target Modal/Card */}
+      {showWhiteboardTarget && (
+        <div className="bg-slate-900/90 border border-indigo-700/60 rounded-2xl p-4 sm:p-5 shadow-2xl space-y-3 relative">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span className="p-1.5 rounded-lg bg-indigo-950 text-indigo-400 border border-indigo-800/60">
+                <Target className="w-4 h-4" />
+              </span>
+              <div>
+                <h3 className="text-sm sm:text-base font-bold text-white">Classroom Whiteboard Reference Target</h3>
+                <p className="text-[11px] text-slate-400">
+                  Active Anchor: Point your phone rear camera at this target to verify presence (matches &ge; 15 inliers).
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowWhiteboardTarget(false)}
+              className="text-slate-400 hover:text-white p-1 rounded-lg text-xs"
+            >
+              ✕ Hide
+            </button>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-950/80 p-3 rounded-xl border border-slate-800">
+            <div className="relative group max-w-sm w-full">
+              <img
+                src="/api/sessions/whiteboard-image"
+                alt="Classroom Whiteboard Target"
+                className="rounded-lg border border-indigo-500/40 w-full object-contain max-h-52 shadow-md bg-white"
+              />
+              <span className="absolute bottom-2 right-2 text-[10px] bg-slate-950/90 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30 font-mono">
+                Anchor Target Ready
+              </span>
+            </div>
+            <div className="space-y-2 text-xs text-slate-300">
+              <p className="font-semibold text-white">How Live Verification Works:</p>
+              <ol className="list-decimal list-inside space-y-1 text-slate-300 text-[11px]">
+                <li>Open <strong>Check-In</strong> on your mobile phone.</li>
+                <li>Pass the front camera face liveness micro-challenge.</li>
+                <li>During the motion bridge, point your phone camera at this whiteboard target on screen.</li>
+                <li>VisioAttend computes 256-bit BRIEF binary descriptors directly in phone RAM.</li>
+                <li><strong className="text-emerald-400">Aiming at this target:</strong> &ge;15 RANSAC inliers &rarr; <span className="text-emerald-400 font-bold">PRESENT</span>.</li>
+                <li><strong className="text-red-400">Aiming at anything else:</strong> 0-3 inliers &rarr; <span className="text-red-400 font-bold">REJECTED_OUTLIER</span>.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Summary Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">

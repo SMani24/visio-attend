@@ -1,7 +1,8 @@
 import json
 import asyncio
 from typing import Dict, List, Set
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
+import cv2
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -18,7 +19,32 @@ from backend.app.models.schemas import (
     SceneFeatures,
 )
 from backend.app.cv_engine.consensus_graph import ConsensusGraphEngine
-from backend.app.cv_engine.simulator import create_simulated_classroom_submissions
+from backend.app.cv_engine.simulator import (
+    create_simulated_classroom_submissions,
+    generate_synthetic_whiteboard,
+    extract_features_from_image,
+)
+
+# In-memory storage of live session submissions
+# session_id -> List[AttendanceSubmissionRequest]
+session_submissions_store: Dict[str, List[AttendanceSubmissionRequest]] = {}
+# session_id -> Optional[SceneFeatures] (anchor)
+session_anchor_store: Dict[str, SceneFeatures] = {}
+
+def create_whiteboard_anchor() -> SceneFeatures:
+    wb = generate_synthetic_whiteboard()
+    kps, descs_b64 = extract_features_from_image(wb)
+    return SceneFeatures(
+        frame_width=640,
+        frame_height=480,
+        redacted_faces_count=0,
+        keypoint_count=len(kps),
+        keypoints=kps,
+        descriptors_b64=descs_b64,
+    )
+
+# Automatically seed default session with the Classroom Whiteboard Anchor
+session_anchor_store["sess_2026_cv_01"] = create_whiteboard_anchor()
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -37,12 +63,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# In-memory storage of live session submissions
-# session_id -> List[AttendanceSubmissionRequest]
-session_submissions_store: Dict[str, List[AttendanceSubmissionRequest]] = {}
-# session_id -> Optional[SceneFeatures] (anchor)
-session_anchor_store: Dict[str, SceneFeatures] = {}
 
 # Active WebSocket connections per session
 class ConnectionManager:
@@ -128,6 +148,19 @@ def create_or_get_session(req: SessionCreateRequest, db: Session = Depends(get_d
         submissions_count=len(submissions),
         verified_count=verified_count,
     )
+
+
+@app.get("/api/sessions/whiteboard-image")
+def get_whiteboard_image():
+    """
+    Returns the synthetic classroom whiteboard target image as PNG.
+    Students in the room point their rear camera at this target to verify presence.
+    """
+    wb = generate_synthetic_whiteboard()
+    success, buffer = cv2.imencode(".png", wb)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to encode whiteboard image")
+    return Response(content=buffer.tobytes(), media_type="image/png")
 
 
 @app.get("/api/sessions/{session_id}", response_model=SessionInfo)
@@ -308,6 +341,40 @@ async def reset_session(session_id: str):
         "graph": empty_graph.model_dump(),
     })
     return {"status": "reset", "session_id": session_id}
+
+
+@app.post("/api/sessions/{session_id}/set-whiteboard-anchor")
+async def set_whiteboard_anchor(session_id: str):
+    anchor = create_whiteboard_anchor()
+    session_anchor_store[session_id] = anchor
+    subs = session_submissions_store.get(session_id, [])
+    _, graph_response = cv_engine.evaluate_session(subs, anchor_features=anchor)
+    await manager.broadcast(session_id, {
+        "type": "CONSENSUS_GRAPH_UPDATE",
+        "session_id": session_id,
+        "graph": graph_response.model_dump(),
+    })
+    return {"status": "anchor_set", "session_id": session_id, "anchor_keypoints": anchor.keypoint_count}
+
+
+@app.post("/api/sessions/{session_id}/activate-classroom-peers")
+async def activate_classroom_peers(session_id: str):
+    """
+    Populates session with 5 valid students in the room looking at the whiteboard.
+    """
+    simulated_subs = create_simulated_classroom_submissions(session_id)
+    valid_peers = [s for s in simulated_subs if s.student_id != "99109999"]
+    session_submissions_store[session_id] = valid_peers
+
+    anchor = session_anchor_store.get(session_id)
+    results, graph_response = cv_engine.evaluate_session(valid_peers, anchor_features=anchor)
+    await manager.broadcast(session_id, {
+        "type": "PEERS_ACTIVATED",
+        "session_id": session_id,
+        "graph": graph_response.model_dump(),
+        "results": [r.model_dump() for r in results],
+    })
+    return {"status": "peers_activated", "session_id": session_id, "count": len(valid_peers)}
 
 
 @app.websocket("/ws/{session_id}")

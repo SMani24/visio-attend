@@ -145,10 +145,10 @@ class ConsensusGraphEngine:
                 consensus_cluster_id = node_cluster_map.get(anchor_id, 0)
         else:
             # Mode B: Zero-Touch Peer Consensus Mode
-            # Dominant connected component with >= 2 nodes (or 1 if total submissions is 1)
+            # Dominant connected component MUST have >= 2 students connected by >= 15 inliers!
             if connected_components:
                 largest_comp = connected_components[0]
-                if len(largest_comp) >= 2 or len(submissions) == 1:
+                if len(largest_comp) >= 2:
                     approved_node_ids = set(largest_comp)
                     consensus_cluster_id = 0
 
@@ -188,12 +188,18 @@ class ConsensusGraphEngine:
                 if status == "PRESENT":
                     status = "REJECTED_REPLAY"
 
-            # 4. Consensus Graph Inlier check
+            # 4. Consensus Graph Inlier check (Must have at least min_inliers geometric inliers!)
             max_inliers = max_inliers_per_node.get(sid, 0)
-            in_consensus_cluster = sid in approved_node_ids
+            in_consensus_cluster = (sid in approved_node_ids) and (max_inliers >= self.min_inliers)
 
             if not in_consensus_cluster:
-                reasons.append(f"Scene geometric consensus failed: max inliers ({max_inliers}) < {self.min_inliers}")
+                if has_anchor:
+                    reasons.append(f"Target mismatch: {max_inliers} RANSAC inliers with classroom anchor (< {self.min_inliers} required)")
+                elif len(submissions) <= 1:
+                    reasons.append("Waiting for peer consensus: No other peers have submitted in this session (>= 15 inliers required)")
+                else:
+                    reasons.append(f"Scene geometric consensus failed: max inliers ({max_inliers}) < {self.min_inliers}")
+                
                 if status == "PRESENT":
                     status = "REJECTED_OUTLIER"
 

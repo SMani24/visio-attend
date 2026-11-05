@@ -142,3 +142,96 @@ def test_api_endpoints(test_client):
     assert graph["consensus_cluster_size"] == 5
     assert graph["outliers_count"] == 1
     assert len(graph["nodes"]) == 6
+
+
+def test_single_submission_anchor_mode_and_outlier():
+    from backend.app.models.schemas import FaceProof, MotionBridge, SceneFeatures
+
+    engine = ConsensusGraphEngine(min_inliers=15)
+    wb = generate_synthetic_whiteboard()
+    dorm = generate_unrelated_room()
+
+    wb_kps, wb_descs = extract_features_from_image(wb)
+    dorm_kps, dorm_descs = extract_features_from_image(dorm)
+
+    anchor = SceneFeatures(
+        frame_width=640,
+        frame_height=480,
+        redacted_faces_count=0,
+        keypoint_count=len(wb_kps),
+        keypoints=wb_kps,
+        descriptors_b64=wb_descs,
+    )
+
+    valid_face = FaceProof(
+        verified=True,
+        cosine_similarity=0.88,
+        liveness_action="BLINK_EAR_ACTIVE",
+        ear_min=0.18,
+        yaw_delta_deg=0.0,
+        enrollment_commitment_hash="test_hash",
+    )
+    valid_motion = MotionBridge(
+        camera_switch_ms=450,
+        prompted_direction="RIGHT",
+        observed_flow_direction="RIGHT",
+        direction_matched=True,
+        flow_coherence=0.85,
+        mean_flow_magnitude_px=14.2,
+        tracked_points_count=45,
+    )
+
+    # 1. Random / dorm room submission against whiteboard anchor -> MUST BE REJECTED_OUTLIER
+    unrelated_sub = AttendanceSubmissionRequest(
+        session_id="test_anchor_sess",
+        student_id="student_dorm",
+        student_name="Dorm Student",
+        timestamp_ms=1000,
+        face_proof=valid_face,
+        motion_bridge=valid_motion,
+        scene_features=SceneFeatures(
+            frame_width=640,
+            frame_height=480,
+            redacted_faces_count=0,
+            keypoint_count=len(dorm_kps),
+            keypoints=dorm_kps,
+            descriptors_b64=dorm_descs,
+        ),
+    )
+
+    results_dorm, _ = engine.evaluate_session([unrelated_sub], anchor_features=anchor)
+    assert results_dorm[0].status == "REJECTED_OUTLIER"
+    assert results_dorm[0].verified is False
+    assert results_dorm[0].inlier_count_max < 15
+
+    # 2. Classroom whiteboard submission against whiteboard anchor -> MUST BE PRESENT
+    wb_view = generate_perspective_view(wb, (12, 10), (10, 15), (14, 12), (15, 10))
+    match_kps, match_descs = extract_features_from_image(wb_view)
+
+    matching_sub = AttendanceSubmissionRequest(
+        session_id="test_anchor_sess",
+        student_id="student_classroom",
+        student_name="Classroom Student",
+        timestamp_ms=2000,
+        face_proof=valid_face,
+        motion_bridge=valid_motion,
+        scene_features=SceneFeatures(
+            frame_width=640,
+            frame_height=480,
+            redacted_faces_count=0,
+            keypoint_count=len(match_kps),
+            keypoints=match_kps,
+            descriptors_b64=match_descs,
+        ),
+    )
+
+    results_match, _ = engine.evaluate_session([matching_sub], anchor_features=anchor)
+    assert results_match[0].status == "PRESENT"
+    assert results_match[0].verified is True
+    assert results_match[0].inlier_count_max >= 15
+
+    # 3. Single submission WITHOUT anchor and WITHOUT peers -> MUST NOT BE PRESENT
+    results_no_peer, _ = engine.evaluate_session([matching_sub], anchor_features=None)
+    assert results_no_peer[0].status == "REJECTED_OUTLIER"
+    assert results_no_peer[0].verified is False
+

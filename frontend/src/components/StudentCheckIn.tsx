@@ -166,38 +166,73 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
       if (stream) {
         streamRef.current = stream;
         setIsCameraLive(true);
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
       }
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('Rear camera activation error:', err);
+    });
 
     const switchDelta = Date.now() - switchStart;
     setCameraSwitchMs(Math.max(520, switchDelta));
 
-    // Progress bar for 1.2s micro-pan
+    // Progress bar for 1.8s micro-pan to frame the target
     let progress = 0;
+    setMotionProgress(0);
     const panInterval = setInterval(() => {
-      progress += 10;
+      progress += 5;
       setMotionProgress(progress);
       if (progress >= 100) {
         clearInterval(panInterval);
-        triggerRearCameraORB(chosenDir, switchDelta);
+        triggerRearCameraORB(chosenDir, Date.now() - switchStart);
       }
-    }, 120);
+    }, 90);
   };
 
   // Phase 3 & 4: Rear Camera ORB Extraction and Backend Submission
   const triggerRearCameraORB = async (direction: DirectionPrompt, switchDelta: number) => {
     setStage('REAR_CAM');
 
-    // Optical Flow computation
+    // 1. Grab current video frame onto canvas before stopping camera
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext('2d');
+    let hasRealPixels = false;
+
+    if (ctx && videoRef.current && videoRef.current.videoWidth > 0) {
+      try {
+        ctx.drawImage(videoRef.current, 0, 0, 640, 480);
+        hasRealPixels = true;
+      } catch (e) {
+        console.warn('Canvas drawImage error:', e);
+      }
+    } else if (streamRef.current) {
+      try {
+        const track = streamRef.current.getVideoTracks()[0];
+        if (track && track.readyState === 'live' && typeof (window as any).ImageCapture === 'function') {
+          const ic = new (window as any).ImageCapture(track);
+          const bitmap = await ic.grabFrame();
+          ctx?.drawImage(bitmap, 0, 0, 640, 480);
+          hasRealPixels = true;
+        }
+      } catch (e) {
+        console.warn('ImageCapture fallback error:', e);
+      }
+    }
+
+    // Stop camera now that frame is captured
+    stopCamera();
+
+    // 2. Optical Flow computation
     const flowRes = await computeLucasKanadeOpticalFlow([], direction, switchDelta);
 
-    // ORB feature extraction on canvas
-    const dummyCanvas = document.createElement('canvas');
-    dummyCanvas.width = 640;
-    dummyCanvas.height = 480;
-    const sceneFeatures = await extractORBFeatures(dummyCanvas, []);
+    // 3. Extract ORB/BRIEF features (wiping raw pixels from RAM immediately)
+    const sceneFeatures = await extractORBFeatures(canvas, []);
 
-    // Assemble exact Section 5 JSON payload
+    // 4. Assemble exact Section 5 JSON payload
     const now = Date.now();
     const student = profile || {
       student_id: '99102345',
@@ -227,7 +262,7 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
     setLatestPayload(payload);
     setStage('SUBMITTING');
 
-    // Submit to FastAPI backend
+    // 5. Submit to FastAPI backend
     try {
       const res = await fetch('/api/attendance/submit', {
         method: 'POST',
@@ -236,30 +271,32 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
       });
 
       if (!res.ok) {
-        throw new Error(`Submission failed with HTTP ${res.status}`);
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || `Server returned HTTP ${res.status}`);
       }
 
       const result: VerificationResult = await res.json();
       setVerificationResult(result);
       setStage('RESULT');
     } catch (err: any) {
-      console.warn('Backend submission error, providing verified result:', err);
-      // Fallback verified result for standalone / offline demo
+      console.warn('Backend submission error:', err);
+      // Strict rejection on network / consensus failure — NEVER fake PRESENT!
       setVerificationResult({
         student_id: payload.student_id,
         student_name: payload.student_name,
-        verified: true,
-        status: 'PRESENT',
-        inlier_count_max: 185,
-        matched_peers_count: 4,
-        cluster_id: 0,
-        reasons: [],
-        consensus_score: 185.0,
+        verified: false,
+        status: 'REJECTED_OUTLIER',
+        inlier_count_max: 0,
+        matched_peers_count: 0,
+        cluster_id: -1,
+        reasons: [
+          err.message || 'Submission failed: unable to verify RANSAC consensus with backend.',
+          !hasRealPixels ? 'Rear camera frame capture was unavailable or empty.' : '',
+        ].filter(Boolean),
+        consensus_score: 0.0,
       });
       setStage('RESULT');
     }
-
-    stopCamera();
   };
 
   const handleRunInstantSimulation = async (isSpoofer: boolean = false) => {
@@ -439,7 +476,7 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
         </div>
       )}
 
-      {/* Stage: MOTION_BRIDGE (Guided Micro-Pan) */}
+      {/* Stage: MOTION_BRIDGE (Guided Micro-Pan & Rear Camera Preview) */}
       {stage === 'MOTION_BRIDGE' && (
         <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-4 text-center shadow-xl">
           <div className="flex items-center justify-between text-xs text-slate-400">
@@ -447,31 +484,61 @@ export const StudentCheckIn: React.FC<StudentCheckInProps> = ({
             <span className="font-mono text-slate-400 text-[11px]">Switch: {cameraSwitchMs}ms</span>
           </div>
 
-          <div className="p-4 rounded-xl bg-cyan-950/50 border border-cyan-800/50 space-y-2">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-cyan-900/60 text-cyan-300 mb-1">
-              {promptedDirection === 'RIGHT' && <ArrowRight className="w-7 h-7 animate-pulse" />}
-              {promptedDirection === 'LEFT' && <ArrowLeft className="w-7 h-7 animate-pulse" />}
-              {promptedDirection === 'UP' && <ArrowUp className="w-7 h-7 animate-pulse" />}
-              {promptedDirection === 'DOWN' && <ArrowDown className="w-7 h-7 animate-pulse" />}
-            </div>
-            <h4 className="text-base font-bold text-white">
+          <div className="p-3 rounded-xl bg-cyan-950/50 border border-cyan-800/50 space-y-1">
+            <h4 className="text-sm font-semibold text-white">
               Prompt: Pan slowly {promptedDirection} →
             </h4>
-            <p className="text-xs text-cyan-200">
-              Pyramidal Lucas-Kanade Optical Flow verifying physical motion continuity across 15 frames.
+            <p className="text-[11px] text-cyan-300">
+              Point your rear camera at the classroom whiteboard target while panning.
             </p>
           </div>
 
-          {/* Progress bar */}
-          <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-cyan-500 to-indigo-500 h-full transition-all duration-150"
-              style={{ width: `${motionProgress}%` }}
-            />
+          {/* Rear Camera Live Viewport */}
+          <div className="relative mx-auto w-full max-w-[320px] aspect-[4/3] rounded-2xl overflow-hidden border-2 border-cyan-500/60 bg-black flex items-center justify-center shadow-inner">
+            {isCameraLive ? (
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center p-4 space-y-2 select-none">
+                <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin" />
+                <span className="text-xs text-slate-300 font-medium">Activating Rear Camera...</span>
+              </div>
+            )}
+
+            {/* Target Reticle & Guidance Overlay */}
+            <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 bg-gradient-to-b from-black/40 via-transparent to-black/60">
+              <div className="inline-flex items-center space-x-1.5 self-center px-3 py-1 rounded-full bg-slate-950/80 border border-cyan-500/40 text-cyan-300 text-xs font-semibold backdrop-blur-xs">
+                {promptedDirection === 'RIGHT' && <ArrowRight className="w-4 h-4 animate-bounce" />}
+                {promptedDirection === 'LEFT' && <ArrowLeft className="w-4 h-4 animate-bounce" />}
+                {promptedDirection === 'UP' && <ArrowUp className="w-4 h-4 animate-bounce" />}
+                {promptedDirection === 'DOWN' && <ArrowDown className="w-4 h-4 animate-bounce" />}
+                <span>Pan {promptedDirection}</span>
+              </div>
+
+              {/* Whiteboard Reticle target box */}
+              <div className="self-center w-48 h-28 border-2 border-dashed border-cyan-400/80 rounded-xl flex items-center justify-center">
+                <span className="text-[10px] text-cyan-300/80 bg-black/60 px-2 py-0.5 rounded">
+                  Aim at Classroom Target
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full bg-slate-800/90 rounded-full h-2.5 overflow-hidden border border-slate-700/50">
+                <div
+                  className="bg-gradient-to-r from-cyan-400 to-indigo-500 h-full transition-all duration-150"
+                  style={{ width: `${motionProgress}%` }}
+                />
+              </div>
+            </div>
           </div>
 
-          <p className="text-xs text-slate-400">
-            Point at the classroom whiteboard/target while panning...
+          <p className="text-[11px] text-slate-400">
+            Keep the classroom whiteboard in view as the bar completes.
           </p>
         </div>
       )}

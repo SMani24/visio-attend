@@ -24,7 +24,7 @@ if [ ! -d "$DIR/frontend/node_modules" ]; then
 fi
 
 echo "Starting Backend on http://localhost:8000..."
-"$DIR/backend/venv/bin/uvicorn" backend.app.main:app --host 0.0.0.0 --port 8000 &
+"$DIR/backend/venv/bin/uvicorn" backend.app.main:app --host 0.0.0.0 --port 8000 --reload &
 BACKEND_PID=$!
 
 echo "Starting Frontend on http://localhost:5173..."
