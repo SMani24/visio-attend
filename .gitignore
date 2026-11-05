@@ -10,6 +10,8 @@ ENV/
 .venv/
 *.sqlite3
 *.db
+.pytest_cache/
+backend/data/*.db
 
 # Node / Frontend
 node_modules/
